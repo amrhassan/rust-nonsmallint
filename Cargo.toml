@@ -1,7 +1,9 @@
 [package]
 name = "nonsmallnum"
-version = "0.1.0"
+version = "0.0.1"
 authors = ["Amr Hassan <amr.hassan@gmail.com>"]
+description = "Basic arithmetic for unsigned arbitrarily-sized integers in pure Rust"
+license = "MIT"
 
 [dependencies]
 
