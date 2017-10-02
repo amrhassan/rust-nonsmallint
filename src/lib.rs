@@ -1,6 +1,5 @@
 
-#![feature(plugin)]
-#![feature(conservative_impl_trait)]
+
 #![feature(inclusive_range_syntax)]
 
 #[cfg(test)] #[macro_use] extern crate quickcheck;
