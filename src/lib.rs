@@ -11,6 +11,7 @@
 use std::iter::repeat;
 use std::cmp::max;
 use std::cmp::min;
+use std::fmt;
 
 /// Least-significant-digit first multi-word decimal number
 #[derive(Eq, Debug, Clone)]
@@ -282,6 +283,20 @@ impl PartialEq for NonSmallInt {
     }
 }
 
+impl fmt::Display for NonSmallInt {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        if self.is_zero() {
+            write!(f, "0")
+        } else {
+            let mut result = write!(f, "");
+            for d in self.digits.iter().rev() {
+                result = write!(f, "{}", d);
+            }
+            result
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
 
@@ -379,6 +394,9 @@ mod tests {
             }
         }
 
+        fn displays(x: MinimalNonSmallInt) -> bool {
+            format!("{}", x.nsi) == format!("{}", x.n)
+        }
     }
 
     //#[test]
