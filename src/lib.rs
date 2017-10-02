@@ -1,12 +1,16 @@
 
-#![feature(conservative_impl_trait)] 
+#![feature(plugin)]
+#![feature(conservative_impl_trait)]
+#![feature(inclusive_range_syntax)]
 
-#[macro_use] #[cfg(test)] extern crate quickcheck;
+#[cfg(test)] #[macro_use] extern crate quickcheck;
+
 #[cfg(test)] use quickcheck::Arbitrary;
 #[cfg(test)] use quickcheck::Gen;
 
 use std::iter::repeat;
 use std::cmp::max;
+use std::cmp::min;
 
 /// Least-significant-digit first multi-word decimal number
 #[derive(Eq, Debug, Clone)]
@@ -111,6 +115,10 @@ impl NonSmallInt {
         NonSmallInt { digits: out_digits }
     }
 
+    pub fn is_zero(&self) -> bool {
+        self.digits.len() == 0 || self.digits.iter().all(|&n| n == 0)
+    }
+
     /// Returns (quotient, remainder)
     pub fn div_by_u32(&self, rhs: u32) -> (NonSmallInt, NonSmallInt) {
         let mut quotient = Vec::new();
@@ -130,14 +138,105 @@ impl NonSmallInt {
         (NonSmallInt { digits: quotient }, NonSmallInt { digits: remainder })
     }
 
-    pub fn div(&self, rhs: &NonSmallInt) -> (NonSmallInt, NonSmallInt) {
-        if rhs.length(RADIX) == 1 {
-            self.div_by_u32(rhs.digits[0] as u32)
+    pub fn div(&self, rhs: &NonSmallInt) -> Option<(NonSmallInt, NonSmallInt)> {
+        if rhs.is_zero() {
+            None
+        } else if rhs.length(RADIX) == 1 {
+            Some(self.div_by_u32(rhs.digits[0] as u32))
         } else if self.length(RADIX) < rhs.length(RADIX) {
-            (NonSmallInt { digits: vec![] }, self.clone())
+            Some((NonSmallInt { digits: vec![] }, self.clone()))
         } else {
-            panic!("TODO")
+            Some(self.long_divide_by(rhs))
         }
+    }
+
+    /// Implementation from http://surface.syr.edu/cgi/viewcontent.cgi?article=1162&context=eecs_techreports
+    fn long_divide_by(&self, rhs: &NonSmallInt) -> (NonSmallInt, NonSmallInt) {
+
+        trait IndexingIsHard<A> {
+
+            /// Returns default value for A if doesn't exist
+            fn lookup(&self, ix: usize) -> A;
+
+            /// Resizes self if doesn't fit new value
+            fn put(&mut self, ix: usize, value: A);
+        }
+
+        static ZERO: u8 = 0;
+
+        impl IndexingIsHard<u8> for Vec<u8> {
+            fn lookup(&self, ix: usize) -> u8 {
+                *self.get(ix).unwrap_or(&ZERO)
+            }
+            fn put(&mut self, ix: usize, value: u8) {
+                if ix < self.len() {
+                    self[ix] = value;
+                } else {
+                    self.insert(ix, value);
+                }
+            }
+}
+
+        let trial = |r: &Vec<u8>, d: &Vec<u8>, k: usize, m: usize| -> u8 {
+            let km = k + m;
+            let r3: u64 = ((r.lookup(km) as u64 * RADIX) + r.lookup(km-1) as u64) * RADIX + r.lookup(km-2) as u64;
+            let d2: u64 = d.lookup(m-1) as u64 * RADIX + d.lookup(m-2) as u64;
+            min(r3 / d2, RADIX - 1) as u8
+        };
+
+        let smaller = |r: &Vec<u8>, dq: &Vec<u8>, k: usize, m: usize| -> bool {
+            let mut i = m;
+            let mut j = 0;
+            while i != j {
+                if r.lookup(i+k) != dq.lookup(i) {
+                    j = i;
+                } else {
+                    i = i - 1;
+                }
+            }
+            r.lookup(i+k) < dq.lookup(i)
+        };
+
+        let difference = |r: &mut Vec<u8>, dq: &Vec<u8>, k: usize, m: usize| {
+            let mut borrow: u64 = 0;
+            for i in 0..=m {
+                let diff: u64 = (RADIX + *r.get(i+k).unwrap_or(&ZERO) as u64).wrapping_sub(*dq.get(i).unwrap_or(&ZERO) as u64 + borrow);
+                if (i+k) < r.len() {
+                    r[i+k] = (diff % RADIX) as u8;
+                } else {
+                    r.insert(i+k, (diff % RADIX) as u8);
+                }
+                borrow = 1 - diff / RADIX;
+            }
+        };
+
+        let longdivide = |x: &NonSmallInt, y: &NonSmallInt| -> (NonSmallInt, NonSmallInt) {
+            let n = x.length(RADIX);
+            let m = y.length(RADIX);
+
+            let f: u8 = RADIX as u8 / (y.digits[m-1] + 1);
+
+            let mut r = x.multiply_by(f as u32);
+            let d = y.multiply_by(f as u32);
+            let mut q = Vec::new();
+
+            for k in (0..=(n-m)).rev() {
+                let mut qt = trial(&r.digits, &d.digits, k, m);
+                let mut dq = d.multiply_by(qt as u32);
+                if smaller(&r.digits, &dq.digits, k, m) {
+                    qt = qt - 1;
+                    dq = d.multiply_by(qt as u32);
+                }
+                q.insert(0, qt as u8);
+                difference(&mut r.digits, &dq.digits, k, m)
+            }
+
+            r = r.quotient(f as u32);
+
+            (NonSmallInt { digits: q }, r)
+        };
+
+        longdivide(self, rhs)
     }
 
     pub fn lt(&self, rhs: &NonSmallInt) -> bool {
@@ -153,22 +252,18 @@ impl NonSmallInt {
         }
     }
 
+    /// Right-padded
     fn digits_padded_to_length<'a>(&'a self, n: usize) -> impl Iterator<Item=&'a u8> {
         static ZERO: u8 = 0;
         self.digits.iter().chain(repeat(&ZERO).take(n - self.digits.len()))
-    }
-
-    /// Left-pads the shorter one if necessary
-    fn digits_zipped_with_digits_from<'a>(&'a self, rhs: &'a NonSmallInt) -> impl Iterator<Item=(&'a u8, &u8)> {
-        let length = max(self.digits.len(), rhs.digits.len());
-        self.digits_padded_to_length(length).zip(rhs.digits_padded_to_length(length))
     }
 
     /// Result or None for underflow
     pub fn minus(&self, rhs: &NonSmallInt) -> Option<NonSmallInt> {
         let mut out = Vec::new();
         let mut borrow = 0u32;
-        for (&l, &r) in self.digits_zipped_with_digits_from(rhs) {
+        let max_length = max(self.digits.len(), rhs.digits.len());
+        for (&l, &r) in self.digits_padded_to_length(max_length).zip(rhs.digits_padded_to_length(max_length)) {
             let diff: u32 = (RADIX as u32 + l as u32).wrapping_sub(r as u32 + borrow);
             out.push((diff % RADIX as u32) as u8);
             borrow = 1 - diff / RADIX as u32;
@@ -274,6 +369,16 @@ mod tests {
                 x.nsi.minus(&y.nsi).is_none()
             }
         }
+
+        fn division(x: MinimalNonSmallInt, y: MinimalNonSmallInt) -> bool {
+            let result = x.nsi.div(&y.nsi);
+            if y.n != 0 {
+                result == Some((NonSmallInt::of(x.n / y.n).unwrap(), NonSmallInt::of(x.n % y.n).unwrap()))
+            } else {
+                result == None
+            }
+        }
+
     }
 
     //#[test]
