@@ -8,7 +8,6 @@
 #[cfg(test)] use quickcheck::Arbitrary;
 #[cfg(test)] use quickcheck::Gen;
 
-use std::iter::repeat;
 use std::cmp::max;
 use std::cmp::min;
 use std::fmt;
@@ -83,7 +82,7 @@ impl NonSmallInt {
     }
 
     /// Returns (quotient, remainder)
-    pub fn div_u32(&self, rhs: u32) -> Option<(NonSmallInt, NonSmallInt)> {
+    fn div_u32(&self, rhs: u32) -> Option<(NonSmallInt, NonSmallInt)> {
         if rhs == 0 {
             None
         } else {
@@ -105,7 +104,7 @@ impl NonSmallInt {
         }
     }
 
-    pub fn div_nsi(&self, rhs: &NonSmallInt) -> Option<(NonSmallInt, NonSmallInt)> {
+    fn div_nsi(&self, rhs: &NonSmallInt) -> Option<(NonSmallInt, NonSmallInt)> {
         if rhs.is_zero() {
             None
         } else if rhs.length(RADIX) == 1 {
@@ -117,24 +116,18 @@ impl NonSmallInt {
         }
     }
 
-    pub fn lt(&self, rhs: &NonSmallInt) -> bool {
+    fn lt(&self, rhs: &NonSmallInt) -> bool {
         if self.length(RADIX) < rhs.length(RADIX) {
             true
         } else {
             let max_length = max(self.digits.len(), rhs.digits.len());
-            let lhs_digits = repeat(&0).take(max_length-self.digits.len()).chain(self.digits.iter().rev());
-            let rhs_digits = repeat(&0).take(max_length-rhs.digits.len()).chain(rhs.digits.iter().rev());
-            match lhs_digits.zip(rhs_digits).skip_while(|&(&lhs_d, &rhs_d)| lhs_d == rhs_d).next() {
+            let lhs_digits = self.iter_digits(max_length).rev();
+            let rhs_digits = rhs.iter_digits(max_length).rev();
+            match lhs_digits.zip(rhs_digits).skip_while(|&(lhs_d, rhs_d)| lhs_d == rhs_d).next() {
                 None => false,
                 Some((lhs_d, rhs_d)) => lhs_d < rhs_d
             }
         }
-    }
-
-    /// Right-padded
-    fn digits_padded_to_length<'a>(&'a self, n: usize) -> impl Iterator<Item=&'a u8> {
-        static ZERO: u8 = 0;
-        self.digits.iter().chain(repeat(&ZERO).take(n - self.digits.len()))
     }
 
     /// Result or None for underflow
@@ -142,13 +135,50 @@ impl NonSmallInt {
         let mut out = Vec::new();
         let mut borrow = 0u32;
         let max_length = max(self.digits.len(), rhs.digits.len());
-        for (&l, &r) in self.digits_padded_to_length(max_length).zip(rhs.digits_padded_to_length(max_length)) {
+        for (l, r) in self.iter_digits(max_length).zip(rhs.iter_digits(max_length)) {
             let diff: u32 = (RADIX as u32 + l as u32).wrapping_sub(r as u32 + borrow);
             out.push((diff % RADIX as u32) as u8);
             borrow = 1 - diff / RADIX as u32;
         }
         if borrow == 0 {
             Some(NonSmallInt { digits: out })
+        } else {
+            None
+        }
+    }
+
+    fn iter_digits(&self, length: usize) -> Digits {
+        Digits { nsi: self, next_ix: 0, next_back_ix: length as isize - 1 }
+    }
+}
+
+struct Digits<'a> { nsi: &'a NonSmallInt, next_ix: usize, next_back_ix: isize }
+
+impl <'a> Iterator for Digits<'a> {
+    type Item = u8;
+    fn next(&mut self) -> Option<u8> {
+        let next_value = |d: &mut Digits| {
+            let out = if d.next_ix < d.nsi.digits.len() { d.nsi.digits[d.next_ix] } else { 0 };
+            d.next_ix += 1;
+            out
+        };
+        if self.next_ix <= self.next_back_ix as usize {
+            Some(next_value(self))
+        } else {
+            None
+        }
+    }
+}
+
+impl <'a> DoubleEndedIterator for Digits<'a> {
+    fn next_back(&mut self) -> Option<u8> {
+        let next_value = |d: &mut Digits| {
+            let out = if (d.next_back_ix as usize) < d.nsi.digits.len() { d.nsi.digits[d.next_back_ix as usize] } else { 0 };
+            d.next_back_ix -= 1;
+            out
+        };
+        if self.next_back_ix >= (self.next_ix as isize) {
+            Some(next_value(self))
         } else {
             None
         }
@@ -435,6 +465,29 @@ mod tests {
                 true
             }
         }
+    }
+
+    #[test]
+    fn double_sided_iter_digits() {
+        let nsi = NonSmallInt::of(654321).unwrap();
+        let mut iter = nsi.iter_digits(10);
+
+        assert_eq!(Some(0), iter.next_back());
+        assert_eq!(Some(0), iter.next_back());
+        assert_eq!(Some(0), iter.next_back());
+        assert_eq!(Some(0), iter.next_back());
+        assert_eq!(Some(1), iter.next());
+        assert_eq!(Some(6), iter.next_back());
+        assert_eq!(Some(5), iter.next_back());
+        assert_eq!(Some(2), iter.next());
+        assert_eq!(Some(3), iter.next());
+        assert_eq!(Some(4), iter.next());
+        assert_eq!(None, iter.next());
+        assert_eq!(None, iter.next_back());
+
+        let reversed: Vec<u8> = nsi.iter_digits(6).rev().collect();
+        let reversed_expected: Vec<u8> = (1..=6).rev().collect();
+        assert_eq!(reversed, reversed_expected)
     }
 
     //#[test]
