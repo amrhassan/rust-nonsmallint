@@ -12,6 +12,8 @@ use std::iter::repeat;
 use std::cmp::max;
 use std::cmp::min;
 use std::fmt;
+use std::ops::Div;
+use std::ops::Rem;
 
 /// Least-significant-digit first multi-word decimal number
 #[derive(Eq, Debug, Clone)]
@@ -73,7 +75,7 @@ impl NonSmallInt {
 //        }
 //    }
 
-    pub fn multiply_by(&self, rhs: u32) -> NonSmallInt {
+    pub fn multiply_u32(&self, rhs: u32) -> NonSmallInt {
         let mut out_digits = Vec::new();
         let mut carry = 0u64;
         for digit in self.digits.iter() {
@@ -90,72 +92,91 @@ impl NonSmallInt {
         NonSmallInt { digits: out_digits }
     }
 
-    pub fn quotient(&self, rhs: u32) -> NonSmallInt {
-        let mut out_digits = Vec::new();
-        let mut carry = 0u64;
-        for digit in self.digits.iter().rev() {
-            let temp: u64 = carry * RADIX + (*digit as u64);
-            let out: u8 = (temp / rhs as u64) as u8;
-            carry = temp % (rhs as u64);
-            out_digits.insert(0, out);
-        }
-        NonSmallInt { digits: out_digits }
-    }
-
-    pub fn remainder(&self, rhs: u32) -> NonSmallInt {
-        let mut out_digits = Vec::new();
-        let mut carry = 0u64;
-        for digit in self.digits.iter().rev() {
-            carry = (carry * RADIX + *digit as u64) % (rhs as u64);
-        }
-        while carry > 0 {
-            let out = carry % RADIX;
-            carry = carry / RADIX;
-            out_digits.push(out as u8);
-        }
-        NonSmallInt { digits: out_digits }
-    }
-
     pub fn is_zero(&self) -> bool {
         self.digits.len() == 0 || self.digits.iter().all(|&n| n == 0)
     }
 
     /// Returns (quotient, remainder)
-    pub fn div_by_u32(&self, rhs: u32) -> (NonSmallInt, NonSmallInt) {
-        let mut quotient = Vec::new();
-        let mut carry = 0u64;
-        for digit in self.digits.iter().rev() {
-            let temp: u64 = carry * RADIX + (*digit as u64);
-            let out: u8 = (temp / rhs as u64) as u8;
-            carry = temp % (rhs as u64);
-            quotient.insert(0, out);
+    pub fn div_u32(&self, rhs: u32) -> Option<(NonSmallInt, NonSmallInt)> {
+        if rhs == 0 {
+            None
+        } else {
+            let mut quotient = Vec::new();
+            let mut carry = 0u64;
+            for digit in self.digits.iter().rev() {
+                let temp: u64 = carry * RADIX + (*digit as u64);
+                let out: u8 = (temp / rhs as u64) as u8;
+                carry = temp % (rhs as u64);
+                quotient.insert(0, out);
+            }
+            let mut remainder = Vec::new();
+            while carry > 0 {
+                let out = carry % RADIX;
+                carry = carry / RADIX;
+                remainder.push(out as u8);
+            }
+            Some((NonSmallInt { digits: quotient }, NonSmallInt { digits: remainder }))
         }
-        let mut remainder = Vec::new();
-        while carry > 0 {
-            let out = carry % RADIX;
-            carry = carry / RADIX;
-            remainder.push(out as u8);
-        }
-        (NonSmallInt { digits: quotient }, NonSmallInt { digits: remainder })
     }
 
-    pub fn div(&self, rhs: &NonSmallInt) -> Option<(NonSmallInt, NonSmallInt)> {
+    pub fn div_nsi(&self, rhs: &NonSmallInt) -> Option<(NonSmallInt, NonSmallInt)> {
         if rhs.is_zero() {
             None
         } else if rhs.length(RADIX) == 1 {
-            Some(self.div_by_u32(rhs.digits[0] as u32))
+            self.div_u32(rhs.digits[0] as u32)
         } else if self.length(RADIX) < rhs.length(RADIX) {
             Some((NonSmallInt { digits: vec![] }, self.clone()))
         } else {
-            Some(self.long_divide_by(rhs))
+            long_division(self, rhs)
         }
     }
 
-    /// Implementation from http://surface.syr.edu/cgi/viewcontent.cgi?article=1162&context=eecs_techreports
-    fn long_divide_by(&self, rhs: &NonSmallInt) -> (NonSmallInt, NonSmallInt) {
+    pub fn lt(&self, rhs: &NonSmallInt) -> bool {
+        if self.length(RADIX) < rhs.length(RADIX) {
+            true
+        } else {
+            let lhs_digits = self.digits.iter().rev().skip_while(|&&n| n == 0);
+            let rhs_digits = rhs.digits.iter().rev().skip_while(|&&n| n == 0);
+            match lhs_digits.zip(rhs_digits).skip_while(|&(&lhs_d, &rhs_d)| lhs_d == rhs_d).next() {
+                None => false,
+                Some((lhs_d, rhs_d)) => lhs_d < rhs_d
+            }
+        }
+    }
 
+    /// Right-padded
+    fn digits_padded_to_length<'a>(&'a self, n: usize) -> impl Iterator<Item=&'a u8> {
+        static ZERO: u8 = 0;
+        self.digits.iter().chain(repeat(&ZERO).take(n - self.digits.len()))
+    }
+
+    /// Result or None for underflow
+    pub fn minus(&self, rhs: &NonSmallInt) -> Option<NonSmallInt> {
+        let mut out = Vec::new();
+        let mut borrow = 0u32;
+        let max_length = max(self.digits.len(), rhs.digits.len());
+        for (&l, &r) in self.digits_padded_to_length(max_length).zip(rhs.digits_padded_to_length(max_length)) {
+            let diff: u32 = (RADIX as u32 + l as u32).wrapping_sub(r as u32 + borrow);
+            out.push((diff % RADIX as u32) as u8);
+            borrow = 1 - diff / RADIX as u32;
+        }
+        if borrow == 0 {
+            Some(NonSmallInt { digits: out })
+        } else {
+            None
+        }
+    }
+}
+
+
+/// Implementation from http://surface.syr.edu/cgi/viewcontent.cgi?article=1162&context=eecs_techreports
+/// Requires 2 <= rhs.length() <= lhs.length()
+fn long_division(lhs: &NonSmallInt, rhs: &NonSmallInt) -> Option<(NonSmallInt, NonSmallInt)> {
+
+    if rhs.is_zero() {
+        None
+    } else {
         trait IndexingIsHard<A> {
-
             /// Returns default value for A if doesn't exist
             fn lookup(&self, ix: usize) -> A;
 
@@ -176,7 +197,7 @@ impl NonSmallInt {
                     self.insert(ix, value);
                 }
             }
-}
+        }
 
         let trial = |r: &Vec<u8>, d: &Vec<u8>, k: usize, m: usize| -> u8 {
             let km = k + m;
@@ -217,69 +238,53 @@ impl NonSmallInt {
 
             let f: u8 = RADIX as u8 / (y.digits[m-1] + 1);
 
-            let mut r = x.multiply_by(f as u32);
-            let d = y.multiply_by(f as u32);
+            let mut r = x.multiply_u32(f as u32);
+            let d = y.multiply_u32(f as u32);
             let mut q = Vec::new();
 
             for k in (0..=(n-m)).rev() {
                 let mut qt = trial(&r.digits, &d.digits, k, m);
-                let mut dq = d.multiply_by(qt as u32);
+                let mut dq = d.multiply_u32(qt as u32);
                 if smaller(&r.digits, &dq.digits, k, m) {
                     qt = qt - 1;
-                    dq = d.multiply_by(qt as u32);
+                    dq = d.multiply_u32(qt as u32);
                 }
                 q.insert(0, qt as u8);
                 difference(&mut r.digits, &dq.digits, k, m)
             }
 
-            r = r.quotient(f as u32);
+            r = r.div_u32(f as u32).expect("Division by Zero is not permitted").0;
 
             (NonSmallInt { digits: q }, r)
         };
 
-        longdivide(self, rhs)
-    }
-
-    pub fn lt(&self, rhs: &NonSmallInt) -> bool {
-        if self.length(RADIX) < rhs.length(RADIX) {
-            true
-        } else {
-            let lhs_digits = self.digits.iter().rev().skip_while(|&&n| n == 0);
-            let rhs_digits = rhs.digits.iter().rev().skip_while(|&&n| n == 0);
-            match lhs_digits.zip(rhs_digits).skip_while(|&(&lhs_d, &rhs_d)| lhs_d == rhs_d).next() {
-                None => false,
-                Some((lhs_d, rhs_d)) => lhs_d < rhs_d
-            }
-        }
-    }
-
-    /// Right-padded
-    fn digits_padded_to_length<'a>(&'a self, n: usize) -> impl Iterator<Item=&'a u8> {
-        static ZERO: u8 = 0;
-        self.digits.iter().chain(repeat(&ZERO).take(n - self.digits.len()))
-    }
-
-    /// Result or None for underflow
-    pub fn minus(&self, rhs: &NonSmallInt) -> Option<NonSmallInt> {
-        let mut out = Vec::new();
-        let mut borrow = 0u32;
-        let max_length = max(self.digits.len(), rhs.digits.len());
-        for (&l, &r) in self.digits_padded_to_length(max_length).zip(rhs.digits_padded_to_length(max_length)) {
-            let diff: u32 = (RADIX as u32 + l as u32).wrapping_sub(r as u32 + borrow);
-            out.push((diff % RADIX as u32) as u8);
-            borrow = 1 - diff / RADIX as u32;
-        }
-        if borrow == 0 {
-            Some(NonSmallInt { digits: out })
-        } else {
-            None
-        }
+        Some(longdivide(lhs, rhs))
     }
 }
 
 impl PartialEq for NonSmallInt {
     fn eq(&self, other: &NonSmallInt) -> bool {
         self.digits.iter().rev().skip_while(|&n| *n == 0).eq(other.digits.iter().rev().skip_while(|&n| *n == 0))
+    }
+}
+
+impl Div for NonSmallInt {
+    type Output = NonSmallInt;
+    fn div(self, rhs: NonSmallInt) -> NonSmallInt {
+        match self.div_nsi(&rhs) {
+            None => panic!("Division by zero is not supported"),
+            Some((q, _)) => q
+        }
+    }
+}
+
+impl Rem for NonSmallInt {
+    type Output = NonSmallInt;
+    fn rem(self, rhs: NonSmallInt) -> NonSmallInt {
+        match self.div_nsi(&rhs) {
+            None => panic!("Division by zero is not supported"),
+            Some((_, r)) => r
+        }
     }
 }
 
@@ -342,38 +347,14 @@ mod tests {
             let xnsi = NonSmallInt::of(x as u64).unwrap();
             let expected = NonSmallInt::of((x * y) as u64).unwrap();
 
-            xnsi.multiply_by(y) == expected
+            xnsi.multiply_u32(y) == expected
         }
 
-        fn quotient_by_u32(x: u64, y: u32) -> bool {
+        fn div_by_u32(x: MinimalNonSmallInt, y: u32) -> bool {
             if y != 0 {
-                let xnsi = NonSmallInt::of(x).unwrap();
-                let expected = NonSmallInt::of(x / y as u64).unwrap();
-
-                xnsi.quotient(y) == expected
+                x.nsi.div_u32(y) == Some((NonSmallInt::of(x.n / y as u64).unwrap(), NonSmallInt::of(x.n % y as u64).unwrap()))
             } else {
-                true
-            }
-        }
-
-        fn remainder_by_u32(x: u64, y: u32) -> bool {
-            if y != 0 {
-                let xnsi = NonSmallInt::of(x).unwrap();
-                let expected = NonSmallInt::of(x % y as u64).unwrap();
-
-                xnsi.remainder(y) == expected
-            } else {
-                true
-            }
-        }
-
-        fn div_by_u32(x: u64, y: u32) -> bool {
-            if y != 0 {
-                let xnsi = NonSmallInt::of(x).unwrap();
-                let expected = (NonSmallInt::of((x / y as u64) as u64).unwrap(), NonSmallInt::of((x % y as u64) as u64).unwrap());
-                xnsi.div_by_u32(y) == expected
-            } else {
-                true
+                x.nsi.div_u32(y) == None
             }
         }
 
@@ -385,8 +366,8 @@ mod tests {
             }
         }
 
-        fn division(x: MinimalNonSmallInt, y: MinimalNonSmallInt) -> bool {
-            let result = x.nsi.div(&y.nsi);
+        fn full_division(x: MinimalNonSmallInt, y: MinimalNonSmallInt) -> bool {
+            let result = x.nsi.div_nsi(&y.nsi);
             if y.n != 0 {
                 result == Some((NonSmallInt::of(x.n / y.n).unwrap(), NonSmallInt::of(x.n % y.n).unwrap()))
             } else {
@@ -396,6 +377,22 @@ mod tests {
 
         fn displays(x: MinimalNonSmallInt) -> bool {
             format!("{}", x.nsi) == format!("{}", x.n)
+        }
+
+        fn div_operator(x: MinimalNonSmallInt, y: MinimalNonSmallInt) -> bool {
+            if y.n != 0 {
+                NonSmallInt::of(x.n / y.n).unwrap() == (x.nsi / y.nsi)
+            } else {
+                true
+            }
+        }
+
+        fn rem_operator(x: MinimalNonSmallInt, y: MinimalNonSmallInt) -> bool {
+            if y.n != 0 {
+                NonSmallInt::of(x.n % y.n).unwrap() == (x.nsi % y.nsi)
+            } else {
+                true
+            }
         }
     }
 
