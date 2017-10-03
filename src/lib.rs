@@ -27,11 +27,15 @@ const RADIX: u64 = 10;
 impl NonSmallInt {
 
     /// Constructs from a u64
-    pub fn of(n: u64) -> Option<NonSmallInt> {
+    pub fn of(n: u64) -> NonSmallInt {
         let str_digits = format!("{}", n);
+        NonSmallInt::parse(&str_digits).unwrap()
+    }
+
+    pub fn parse(n: &str) -> Option<NonSmallInt> {
         let mut digits = Vec::new();
         let mut is_number = true;
-        for c in str_digits.trim().chars() {
+        for c in n.trim().chars() {
             if c.is_digit(RADIX as u32) {
                 digits.push(c.to_digit(RADIX as u32).expect("Failed to parse digit") as u8)
             } else {
@@ -54,6 +58,15 @@ impl NonSmallInt {
         } else {
             panic!("Unsupported feature: computing length of different radix")
         }
+    }
+
+    /// Multiplies by RADIX^n
+    pub fn times_radix(&self, n: usize) -> NonSmallInt {
+        let mut out = self.digits.clone();
+        for _ in 0..n {
+            out.insert(0, 0);
+        }
+        NonSmallInt { digits: out }
     }
 
 //    pub fn add_to_digit(&mut self, ix: usize, rhs: u8) {
@@ -151,11 +164,11 @@ impl NonSmallInt {
     }
 
     fn iter_digits(&self, length: usize) -> Digits {
-        Digits { nsi: self, next_ix: 0, next_back_ix: length as isize - 1 }
+        Digits { nsi: self, next_ix: 0, next_back_ix: length as isize - 1, empty: length == 0 }
     }
 }
 
-struct Digits<'a> { nsi: &'a NonSmallInt, next_ix: usize, next_back_ix: isize }
+struct Digits<'a> { nsi: &'a NonSmallInt, next_ix: usize, next_back_ix: isize, empty: bool }
 
 impl <'a> Iterator for Digits<'a> {
     type Item = u8;
@@ -165,7 +178,7 @@ impl <'a> Iterator for Digits<'a> {
             d.next_ix += 1;
             out
         };
-        if self.next_ix <= self.next_back_ix as usize {
+        if !self.empty && self.next_ix <= self.next_back_ix as usize {
             Some(next_value(self))
         } else {
             None
@@ -180,7 +193,7 @@ impl <'a> DoubleEndedIterator for Digits<'a> {
             d.next_back_ix -= 1;
             out
         };
-        if self.next_back_ix >= (self.next_ix as isize) {
+        if !self.empty && self.next_back_ix >= (self.next_ix as isize) {
             Some(next_value(self))
         } else {
             None
@@ -347,6 +360,34 @@ impl <'a> Mul<u32> for &'a NonSmallInt {
     }
 }
 
+impl Mul<u32> for NonSmallInt {
+    type Output = NonSmallInt;
+    fn mul(self, rhs: u32) -> NonSmallInt {
+        (&self).mul(rhs)
+    }
+}
+
+impl <'a> Mul for &'a NonSmallInt {
+    type Output = NonSmallInt;
+    fn mul(self, rhs: &NonSmallInt) -> NonSmallInt {
+        let mut out = NonSmallInt::of(0);
+        for (&rhs_d, ix) in rhs.digits.iter().zip(0..) {
+            println!("rhs_d: {}, ix: {}", rhs_d, ix);
+            let to_be_added = (self * (rhs_d as u32)).times_radix(ix);
+            println!("to_be_added: {}", to_be_added);
+            out = out + to_be_added;
+        }
+        out
+    }
+}
+
+impl Mul for NonSmallInt {
+    type Output = NonSmallInt;
+    fn mul(self, rhs: NonSmallInt) -> NonSmallInt {
+        (&self).mul(&rhs)
+    }
+}
+
 impl <'a> Sub for &'a NonSmallInt {
     type Output = NonSmallInt;
     fn sub(self, rhs: &NonSmallInt) -> NonSmallInt {
@@ -360,6 +401,7 @@ impl <'a> Sub for &'a NonSmallInt {
 impl <'a> Add for &'a NonSmallInt {
     type Output = NonSmallInt;
     fn add(self, rhs: &NonSmallInt) -> NonSmallInt {
+        println!("Adding {:?} to {:?}", self, rhs);
         let mut out = Vec::new();
         let mut carry = 0u32;
         let max_length = max(self.length(RADIX), rhs.length(RADIX));
@@ -371,7 +413,15 @@ impl <'a> Add for &'a NonSmallInt {
         if carry != 0 {
             out.push((carry % RADIX as u32) as u8);
         }
+        println!("Added {:?} to {:?}", self, rhs);
         NonSmallInt { digits: out }
+    }
+}
+
+impl Add for NonSmallInt {
+    type Output = NonSmallInt;
+    fn add(self, rhs: NonSmallInt) -> NonSmallInt {
+        (&self).add(&rhs)
     }
 }
 
@@ -414,7 +464,7 @@ mod tests {
 
     impl Arbitrary for NonSmallInt {
         fn arbitrary<G: Gen>(g: &mut G) -> NonSmallInt {
-            NonSmallInt::of(u64::arbitrary(g)).unwrap()
+            NonSmallInt::of(u64::arbitrary(g))
         }
     }
 
@@ -425,7 +475,7 @@ mod tests {
     impl Arbitrary for MinimalNonSmallInt {
         fn arbitrary<G: Gen>(g: &mut G) -> MinimalNonSmallInt {
             let n = u64::arbitrary(g);
-            let nsi = NonSmallInt::of(n).unwrap();
+            let nsi = NonSmallInt::of(n);
             MinimalNonSmallInt{nsi, n}
         }
     }
@@ -441,20 +491,19 @@ mod tests {
         }
 
         fn comparison(x: MinimalNonSmallInt, y: MinimalNonSmallInt) -> bool {
-            println!("{:?} cmp {:?}, {:?}, {:?}", x, y, x.n.cmp(&y.n), x.nsi.cmp(&y.nsi));
             x.n.cmp(&y.n) == x.nsi.cmp(&y.nsi)
         }
 
         fn multiplies_by_u32(x: u32, y: u32) -> bool {
-            let xnsi = NonSmallInt::of(x as u64).unwrap();
-            let expected = NonSmallInt::of((x * y) as u64).unwrap();
+            let xnsi = NonSmallInt::of(x as u64);
+            let expected = NonSmallInt::of((x * y) as u64);
 
             &xnsi * y == expected
         }
 
         fn div_by_u32(x: MinimalNonSmallInt, y: u32) -> bool {
             if y != 0 {
-                x.nsi.div_u32(y) == Some((NonSmallInt::of(x.n / y as u64).unwrap(), NonSmallInt::of(x.n % y as u64).unwrap()))
+                x.nsi.div_u32(y) == Some((NonSmallInt::of(x.n / y as u64), NonSmallInt::of(x.n % y as u64)))
             } else {
                 x.nsi.div_u32(y) == None
             }
@@ -462,7 +511,7 @@ mod tests {
 
         fn subtracts(x: MinimalNonSmallInt, y: MinimalNonSmallInt) -> bool {
             if x.n >= y.n {
-                x.nsi.safe_sub(&y.nsi).unwrap() == NonSmallInt::of(x.n - y.n).unwrap()
+                x.nsi.safe_sub(&y.nsi).unwrap() == NonSmallInt::of(x.n - y.n)
             } else {
                 x.nsi.safe_sub(&y.nsi).is_none()
             }
@@ -471,7 +520,7 @@ mod tests {
         fn full_division(x: MinimalNonSmallInt, y: MinimalNonSmallInt) -> bool {
             let result = x.nsi.div_nsi(&y.nsi);
             if y.n != 0 {
-                result == Some((NonSmallInt::of(x.n / y.n).unwrap(), NonSmallInt::of(x.n % y.n).unwrap()))
+                result == Some((NonSmallInt::of(x.n / y.n), NonSmallInt::of(x.n % y.n)))
             } else {
                 result == None
             }
@@ -483,7 +532,7 @@ mod tests {
 
         fn div_operator(x: MinimalNonSmallInt, y: MinimalNonSmallInt) -> bool {
             if y.n != 0 {
-                NonSmallInt::of(x.n / y.n).unwrap() == (&x.nsi / &y.nsi)
+                NonSmallInt::of(x.n / y.n) == (&x.nsi / &y.nsi)
             } else {
                 true
             }
@@ -491,23 +540,28 @@ mod tests {
 
         fn rem_operator(x: MinimalNonSmallInt, y: MinimalNonSmallInt) -> bool {
             if y.n != 0 {
-                NonSmallInt::of(x.n % y.n).unwrap() == (&x.nsi % &y.nsi)
+                NonSmallInt::of(x.n % y.n) == (&x.nsi % &y.nsi)
             } else {
                 true
             }
         }
 
         fn add_operator(x: MinimalNonSmallInt, y: MinimalNonSmallInt) -> bool {
-            let lhs = NonSmallInt::of(x.n + y.n).unwrap();
+            let lhs = NonSmallInt::of(x.n + y.n);
             let rhs = &x.nsi + &y.nsi;
-            println!("lhs: {}, rhs: {}", lhs, rhs);
+            lhs == rhs
+        }
+
+        fn mul_operator(x: MinimalNonSmallInt, y: MinimalNonSmallInt) -> bool {
+            let lhs = NonSmallInt::of(x.n * y.n);
+            let rhs = x.nsi * y.nsi;
             lhs == rhs
         }
     }
 
     #[test]
     fn double_sided_iter_digits() {
-        let nsi = NonSmallInt::of(654321).unwrap();
+        let nsi = NonSmallInt::of(654321);
         let mut iter = nsi.iter_digits(10);
 
         assert_eq!(Some(0), iter.next_back());
