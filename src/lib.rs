@@ -18,7 +18,7 @@ use std::ops::Sub;
 use std::cmp::Ordering;
 use std::cmp::Ord;
 
-/// Least-significant-digit first multi-word decimal number
+/// Little-endian arbitrarily-sized unsigned integer
 #[derive(Eq, Debug, Clone)]
 pub struct NonSmallInt { digits: Vec<u8> }
 
@@ -26,6 +26,7 @@ const RADIX: u64 = 10;
 
 impl NonSmallInt {
 
+    /// Constructs from a u64
     pub fn of(n: u64) -> Option<NonSmallInt> {
         let str_digits = format!("{}", n);
         let mut digits = Vec::new();
@@ -46,6 +47,7 @@ impl NonSmallInt {
         }
     }
 
+    /// Number of significant digits
     pub fn length(&self, radix: u64) -> usize {
         if radix == RADIX {
             self.digits.iter().rev().skip_while(|&n| *n == 0).count()
@@ -285,9 +287,9 @@ impl PartialEq for NonSmallInt {
     }
 }
 
-impl Div for NonSmallInt {
+impl <'a> Div for &'a NonSmallInt {
     type Output = NonSmallInt;
-    fn div(self, rhs: NonSmallInt) -> NonSmallInt {
+    fn div(self, rhs: &NonSmallInt) -> NonSmallInt {
         match self.div_nsi(&rhs) {
             None => panic!("Division by zero is not allowed"),
             Some((q, _)) => q
@@ -481,7 +483,7 @@ mod tests {
 
         fn div_operator(x: MinimalNonSmallInt, y: MinimalNonSmallInt) -> bool {
             if y.n != 0 {
-                NonSmallInt::of(x.n / y.n).unwrap() == (x.nsi / y.nsi)
+                NonSmallInt::of(x.n / y.n).unwrap() == (&x.nsi / &y.nsi)
             } else {
                 true
             }
