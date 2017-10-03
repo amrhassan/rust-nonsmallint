@@ -11,8 +11,10 @@ use std::cmp::max;
 use std::cmp::min;
 use std::fmt;
 use std::ops::Div;
+use std::ops::Add;
 use std::ops::Rem;
 use std::ops::Mul;
+use std::ops::Sub;
 use std::cmp::Ordering;
 use std::cmp::Ord;
 
@@ -130,7 +132,7 @@ impl NonSmallInt {
     }
 
     /// Result or None for underflow
-    pub fn minus(&self, rhs: &NonSmallInt) -> Option<NonSmallInt> {
+    fn safe_sub(&self, rhs: &NonSmallInt) -> Option<NonSmallInt> {
         let mut out = Vec::new();
         let mut borrow = 0u32;
         let max_length = max(self.digits.len(), rhs.digits.len());
@@ -293,7 +295,7 @@ impl Div for NonSmallInt {
     }
 }
 
-impl Div<u32> for NonSmallInt {
+impl <'a> Div<u32> for &'a NonSmallInt {
     type Output = NonSmallInt;
     fn div(self, rhs: u32) -> NonSmallInt {
         match self.div_u32(rhs) {
@@ -303,17 +305,17 @@ impl Div<u32> for NonSmallInt {
     }
 }
 
-impl Rem for NonSmallInt {
+impl <'a> Rem for &'a NonSmallInt {
     type Output = NonSmallInt;
-    fn rem(self, rhs: NonSmallInt) -> NonSmallInt {
-        match self.div_nsi(&rhs) {
+    fn rem(self, rhs: &NonSmallInt) -> NonSmallInt {
+        match self.div_nsi(rhs) {
             None => panic!("Division by zero is not supported"),
             Some((_, r)) => r
         }
     }
 }
 
-impl Rem<u32> for NonSmallInt {
+impl <'a> Rem<u32> for &'a NonSmallInt {
     type Output = NonSmallInt;
     fn rem(self, rhs: u32) -> NonSmallInt {
         match self.div_u32(rhs) {
@@ -340,6 +342,34 @@ impl <'a> Mul<u32> for &'a NonSmallInt {
             out_digits.push(out);
         }
         NonSmallInt { digits: out_digits }
+    }
+}
+
+impl <'a> Sub for &'a NonSmallInt {
+    type Output = NonSmallInt;
+    fn sub(self, rhs: &NonSmallInt) -> NonSmallInt {
+        match self.safe_sub(rhs) {
+            Some(r) => r,
+            None => panic!("NonSmallInt underflow")
+        }
+    }
+}
+
+impl <'a> Add for &'a NonSmallInt {
+    type Output = NonSmallInt;
+    fn add(self, rhs: &NonSmallInt) -> NonSmallInt {
+        let mut out = Vec::new();
+        let mut carry = 0u32;
+        let max_length = max(self.length(RADIX), rhs.length(RADIX));
+        for (ld, rd) in self.iter_digits(max_length).zip(rhs.iter_digits(max_length)) {
+            let temp: u32 = ld as u32 + rd as u32 + carry;
+            out.push((temp % RADIX as u32) as u8);
+            carry = temp / RADIX as u32;
+        }
+        if carry != 0 {
+            out.push((carry % RADIX as u32) as u8);
+        }
+        NonSmallInt { digits: out }
     }
 }
 
@@ -430,9 +460,9 @@ mod tests {
 
         fn subtracts(x: MinimalNonSmallInt, y: MinimalNonSmallInt) -> bool {
             if x.n >= y.n {
-                x.nsi.minus(&y.nsi).unwrap() == NonSmallInt::of(x.n - y.n).unwrap()
+                x.nsi.safe_sub(&y.nsi).unwrap() == NonSmallInt::of(x.n - y.n).unwrap()
             } else {
-                x.nsi.minus(&y.nsi).is_none()
+                x.nsi.safe_sub(&y.nsi).is_none()
             }
         }
 
@@ -459,10 +489,17 @@ mod tests {
 
         fn rem_operator(x: MinimalNonSmallInt, y: MinimalNonSmallInt) -> bool {
             if y.n != 0 {
-                NonSmallInt::of(x.n % y.n).unwrap() == (x.nsi % y.nsi)
+                NonSmallInt::of(x.n % y.n).unwrap() == (&x.nsi % &y.nsi)
             } else {
                 true
             }
+        }
+
+        fn add_operator(x: MinimalNonSmallInt, y: MinimalNonSmallInt) -> bool {
+            let lhs = NonSmallInt::of(x.n + y.n).unwrap();
+            let rhs = &x.nsi + &y.nsi;
+            println!("lhs: {}, rhs: {}", lhs, rhs);
+            lhs == rhs
         }
     }
 
