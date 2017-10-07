@@ -7,7 +7,7 @@ Basic arithmetic for unsigned arbitrarily-sized integers in pure Rust
 Add it to your project dependencies in `Cargo.toml`:
 ```toml
 [dependencies]
-nonsmallnum = "0.0.5"
+nonsmallnum = "0.0.6"
 ```
 
 # Examples #
