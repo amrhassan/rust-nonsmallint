@@ -32,6 +32,7 @@ impl NonSmallInt {
         NonSmallInt::parse(&str_digits).unwrap()
     }
 
+    /// Parses from a radix 10 number
     pub fn parse(n: &str) -> Option<NonSmallInt> {
         let mut digits = Vec::new();
         let mut is_number = true;
