@@ -349,9 +349,7 @@ impl <'a> Mul for &'a NonSmallInt {
     fn mul(self, rhs: &NonSmallInt) -> NonSmallInt {
         let mut out = NonSmallInt::of(0);
         for (&rhs_d, ix) in rhs.digits.iter().zip(0..) {
-            println!("rhs_d: {}, ix: {}", rhs_d, ix);
             let to_be_added = (self * (rhs_d as u32)).times_radix(ix);
-            println!("to_be_added: {}", to_be_added);
             out = out + to_be_added;
         }
         out
@@ -378,7 +376,6 @@ impl <'a> Sub for &'a NonSmallInt {
 impl <'a> Add for &'a NonSmallInt {
     type Output = NonSmallInt;
     fn add(self, rhs: &NonSmallInt) -> NonSmallInt {
-        println!("Adding {:?} to {:?}", self, rhs);
         let mut out = Vec::new();
         let mut carry = 0u32;
         let max_length = max(self.length(RADIX), rhs.length(RADIX));
@@ -390,7 +387,6 @@ impl <'a> Add for &'a NonSmallInt {
         if carry != 0 {
             out.push((carry % RADIX as u32) as u8);
         }
-        println!("Added {:?} to {:?}", self, rhs);
         NonSmallInt { digits: out }
     }
 }
