@@ -70,30 +70,6 @@ impl NonSmallInt {
         NonSmallInt { digits: out }
     }
 
-//    pub fn add_to_digit(&mut self, ix: usize, rhs: u8) {
-//        require(rhs <= MAX_DIGIT as u8, "input is bigger than a single digit");
-//
-//        // Resize if necessary
-//        if ix >= self.digits.len() {
-//            self.digits.resize(ix+1, 0);
-//        }
-//
-//        // Add
-//        self.digits[ix] += rhs;
-//
-//        // Smooth out the numbers bigger than RADIX by carrying over excess
-//        let mut carry = 0;
-//        for j in ix..self.digits.len() {
-//            self.digits[j] += carry;
-//            carry = 0;
-//            if self.digits[j] > MAX_DIGIT {
-//                carry = self.digits[j] / RADIX;
-//                self.digits[j] = self.digits[j] % RADIX;
-//            }
-//            if carry == 0 { break }
-//        }
-//    }
-
     pub fn is_zero(&self) -> bool {
         self.digits.len() == 0 || self.digits.iter().all(|&n| n == 0)
     }
@@ -582,13 +558,4 @@ mod tests {
         let reversed_expected: Vec<u8> = (1..=6).rev().collect();
         assert_eq!(reversed, reversed_expected)
     }
-
-    //#[test]
-    //fn adds_to_digits() {
-    //    let mut x = NonSmallInt{digits: vec![8, 4, 9, 1]};
-    //    x.add_to_digit(1, 8);
-    //    let expected = NonSmallInt{digits: vec![8, 2, 0, 2]};
-
-    //    assert_eq!(expected, x)
-    //}
 }
