@@ -70,6 +70,14 @@ impl NonSmallInt {
         NonSmallInt { digits: out }
     }
 
+    pub fn pow(&self, n: u32) -> NonSmallInt {
+        if n == 0 {
+            NonSmallInt::of(1)
+        } else {
+            self * self.pow(n-1)
+        }
+    }
+
     pub fn is_zero(&self) -> bool {
         self.digits.len() == 0 || self.digits.iter().all(|&n| n == 0)
     }
@@ -356,6 +364,13 @@ impl <'a> Mul for &'a NonSmallInt {
     }
 }
 
+impl <'a> Mul<NonSmallInt> for &'a NonSmallInt {
+    type Output = NonSmallInt;
+    fn mul(self, rhs: NonSmallInt) -> NonSmallInt {
+        self.mul(&rhs)
+    }
+}
+
 impl Mul for NonSmallInt {
     type Output = NonSmallInt;
     fn mul(self, rhs: NonSmallInt) -> NonSmallInt {
@@ -445,11 +460,26 @@ mod tests {
     /// A NonSmallInt along with the same value as u64
     struct MinimalNonSmallInt { nsi: NonSmallInt, n: u64 }
 
+    impl MinimalNonSmallInt {
+        fn of(n: u64) -> MinimalNonSmallInt {
+            MinimalNonSmallInt { nsi: NonSmallInt::of(n), n: n }
+        }
+    }
+
     impl Arbitrary for MinimalNonSmallInt {
         fn arbitrary<G: Gen>(g: &mut G) -> MinimalNonSmallInt {
             let n = u64::arbitrary(g);
-            let nsi = NonSmallInt::of(n);
-            MinimalNonSmallInt{nsi, n}
+            MinimalNonSmallInt::of(n)
+        }
+    }
+
+    #[derive(Clone, Debug)]
+    struct SmallInt { n: u8 }
+
+    impl Arbitrary for SmallInt {
+        fn arbitrary<G: Gen>(g: &mut G) -> SmallInt {
+            let n = u8::arbitrary(g) % 10;
+            SmallInt { n: n }
         }
     }
 
@@ -529,6 +559,10 @@ mod tests {
             let lhs = NonSmallInt::of(x.n * y.n);
             let rhs = x.nsi * y.nsi;
             lhs == rhs
+        }
+
+        fn power(x: MinimalNonSmallInt, y: SmallInt) -> bool {
+            x.nsi.pow(y.n as u32) == NonSmallInt::of(x.n.pow(y.n as u32))
         }
     }
 
