@@ -17,6 +17,7 @@ use std::ops::Mul;
 use std::ops::Sub;
 use std::cmp::Ordering;
 use std::cmp::Ord;
+use std::iter::Sum;
 
 /// Little-endian arbitrarily-sized unsigned integer
 #[derive(Eq, Debug, Clone)]
@@ -445,6 +446,16 @@ impl fmt::Display for NonSmallInt {
     }
 }
 
+impl Sum for NonSmallInt {
+    fn sum<I>(iter: I) -> NonSmallInt where I: Iterator<Item = NonSmallInt> {
+        let mut acc = NonSmallInt::of(0);
+        for x in iter {
+            acc = acc + x;
+        }
+        acc
+    }
+}
+
 #[cfg(test)]
 mod tests {
 
@@ -563,6 +574,13 @@ mod tests {
 
         fn power(x: MinimalNonSmallInt, y: SmallInt) -> bool {
             x.nsi.pow(y.n as u32) == NonSmallInt::of(x.n.pow(y.n as u32))
+        }
+
+        fn sum(xs: Vec<MinimalNonSmallInt>) -> bool {
+            let smallsies: Vec<u64> = xs.iter().map(|n| n.n).collect();
+            let bigsies: Vec<NonSmallInt> = xs.into_iter().map(|n| n.nsi).collect();
+
+            NonSmallInt::of(smallsies.iter().sum()) == bigsies.into_iter().sum()
         }
     }
 
