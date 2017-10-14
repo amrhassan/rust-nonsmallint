@@ -1,6 +1,6 @@
 [root]
 name = "nonsmallnum"
-version = "0.0.7-alpha.1"
+version = "0.0.7-alpha.2"
 dependencies = [
  "quickcheck 0.4.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "quickcheck_macros 0.4.2 (registry+https://github.com/rust-lang/crates.io-index)",
