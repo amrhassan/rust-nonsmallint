@@ -1,7 +1,4 @@
 
-
-#![feature(inclusive_range_syntax)]
-
 #[cfg(test)] #[macro_use] extern crate quickcheck;
 
 #[cfg(test)] use quickcheck::Arbitrary;
@@ -239,7 +236,7 @@ fn long_division(lhs: &NonSmallInt, rhs: &NonSmallInt) -> Option<(NonSmallInt, N
 
         let difference = |r: &mut Vec<u8>, dq: &Vec<u8>, k: usize, m: usize| {
             let mut borrow: u64 = 0;
-            for i in 0..=m {
+            for i in 0..m+1 {
                 let diff: u64 = (RADIX + *r.get(i+k).unwrap_or(&ZERO) as u64).wrapping_sub(*dq.get(i).unwrap_or(&ZERO) as u64 + borrow);
                 if (i+k) < r.len() {
                     r[i+k] = (diff % RADIX) as u8;
@@ -260,7 +257,7 @@ fn long_division(lhs: &NonSmallInt, rhs: &NonSmallInt) -> Option<(NonSmallInt, N
             let d = y * f as u32;
             let mut q = Vec::new();
 
-            for k in (0..=(n-m)).rev() {
+            for k in (0..(n-m+1)).rev() {
                 let mut qt = trial(&r.digits, &d.digits, k, m);
                 let mut dq = &d * qt as u32;
                 if smaller(&r.digits, &dq.digits, k, m) {
@@ -603,7 +600,7 @@ mod tests {
         assert_eq!(None, iter.next_back());
 
         let reversed: Vec<u8> = nsi.iter_digits(6).rev().collect();
-        let reversed_expected: Vec<u8> = (1..=6).rev().collect();
+        let reversed_expected: Vec<u8> = (1..7).rev().collect();
         assert_eq!(reversed, reversed_expected)
     }
 }

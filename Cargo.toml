@@ -8,8 +8,7 @@ license = "MIT"
 [dependencies]
 
 [dev-dependencies]
-quickcheck = "0.4"
-quickcheck_macros = "0.4"
+quickcheck = "0.3"
 
 [badges]
 travis-ci = { repository = "amrhassan/rust-nonsmallnum" }
