@@ -1,0 +1,1 @@
+initSidebarItems({"struct":[["NonSmallInt","Little-endian arbitrarily-sized unsigned integer"]]});
